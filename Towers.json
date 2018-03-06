@@ -9,7 +9,7 @@
       },
       "allowedValues": [
         "dev",
-        "qas",
+        "qas"
        ]
     },
     "projectCode": {
