@@ -1,0 +1,263 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2015-01-01/deploymentTemplate.json",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "environmentCode": {
+      "type": "string",
+      "metadata": {
+        "description": "The environment 3 digits code"
+      },
+      "allowedValues": [
+        "dev",
+        "qas",
+       ]
+    },
+    "projectCode": {
+      "type": "string",
+      "metadata": {
+        "description": "The project 6 digits code"
+      }
+    },
+    "webAppName": {
+      "type": "string",
+      "minLength": 1
+    },
+    "WebAppAPIName": {
+      "type": "string",
+      "minLength": 1
+    },
+    "sql-serverAdminLogin": {
+      "type": "string",
+      "minLength": 1
+    },
+    "sql-serverAdminLoginPassword": {
+      "type": "securestring"
+    },
+    "Database1-Collation": {
+      "type": "string",
+      "minLength": 1,
+      "defaultValue": "SQL_Latin1_General_CP1_CI_AS"
+    },
+    "Database1-Edition": {
+      "type": "string",
+      "defaultValue": "Basic",
+      "allowedValues": [
+        "Basic",
+        "Standard",
+        "Premium"
+      ]
+    },
+    "towersDB-Size": {
+      "type": "string",
+      "defaultValue": "Basic",
+      "allowedValues": [
+        "Basic",
+        "S0",
+        "S1",
+        "S2",
+        "P1",
+        "P2",
+        "P3"
+      ],
+      "metadata": {
+        "description": "Describes the performance level for Edition"
+      }
+    }
+
+  },
+  "variables": {
+    "storageAccountName": "[concat('storage', parameters('projectCode'), parameters('environmentCode'))]",
+    "profileName": "[concat('cdnprofile-', parameters('projectCode'), parameters('environmentCode'))]",
+    "RGLocation": "[resourceGroup().location]",
+    "appServicePlanName": "[concat('asp-', parameters('projectCode'), parameters('environmentCode'))]",
+    "endpointName": "[concat('endpoint-', parameters('projectCode'), parameters('environmentCode'))]",
+    "sql-serverName": "[concat('sqlserver-', parameters('projectCode'))]",
+    "sql-databaseName": "[concat('sqldb-', parameters('projectCode'), parameters('environmentCode'))]",
+    "AppInsight1": "[concat('insight-', parameters('projectCode'), parameters('environmentCode'))]",
+    "AppInsight2": "[concat('insight-api-', parameters('projectCode'), parameters('environmentCode'))]"
+  },
+  "resources": [
+    {
+      "type": "Microsoft.Storage/storageAccounts",
+      "name": "[variables('storageAccountName')]",
+      "apiVersion": "2016-01-01",
+      "location": "[resourceGroup().location]",
+      "tags": {
+        "displayName": "[variables('storageAccountName')]"
+      },
+      "kind": "Storage",
+      "sku": {
+        "name": "Standard_LRS"
+      },
+      "properties": {}
+    },
+    {
+      "name": "[variables('profileName')]",
+      "type": "Microsoft.Cdn/profiles",
+      "location": "[resourceGroup().location]",
+      "apiVersion": "2016-04-02",
+      "tags": {
+        "displayName": "[variables('profileName')]"
+      },
+      "sku": {
+        "name": "Standard_Akamai"
+      },
+      "properties": {},
+      "resources": [
+        {
+          "name": "[variables('endpointName')]",
+          "type": "endpoints",
+          "location": "[resourceGroup().location]",
+          "apiVersion": "2016-04-02",
+          "dependsOn": [
+            "[resourceId('Microsoft.Cdn/profiles', variables('profileName'))]"
+          ],
+          "tags": {
+            "displayName": "endpoint"
+          },
+          "properties": {
+            "originHostHeader": "[replace(replace(reference(variables('storageAccountName')).primaryEndpoints.blob,'https://',''),'/','')]",
+            "isHttpAllowed": true,
+            "isHttpsAllowed": true,
+            "queryStringCachingBehavior": "IgnoreQueryString",
+            "contentTypesToCompress": [
+              "text/plain",
+              "text/html",
+              "text/css",
+              "application/x-javascript",
+              "text/javascript"
+            ],
+            "isCompressionEnabled": "True",
+            "origins": [
+              {
+                "name": "origin1",
+                "properties": {
+                  "hostName": "[replace(replace(reference(variables('storageAccountName')).primaryEndpoints.blob,'https://',''),'/','')]"
+                }
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "apiVersion": "2016-03-01",
+      "name": "[variables('appServicePlanName')]",
+      "type": "Microsoft.Web/serverfarms",
+      "location": "[variables('RGLocation')]",
+      "properties": {
+        "name": "[variables('appServicePlanName')]"
+      },
+      "sku": {
+        "name": "F1",
+        "capacity": "1"
+      }
+    },
+    {
+      "apiVersion": "2016-03-01",
+      "name": "[parameters('webAppName')]",
+      "type": "Microsoft.Web/sites",
+      "location": "[variables('RGLocation')]",
+      "properties": {
+        "name": "[parameters('webAppName')]",
+        "serverFarmId": "[resourceId('Microsoft.Web/serverFarms',variables('appServicePlanName'))]"
+      },
+      "dependsOn": [
+        "[concat('Microsoft.Web/serverFarms/',variables('appServicePlanName'))]"
+      ]
+    },
+    {
+      "apiVersion": "2014-04-01",
+      "name": "[variables('AppInsight1')]",
+      "type": "Microsoft.Insights/components",
+      "location": "[variables('RGLocation')]",
+      "dependsOn": [
+        "[resourceId('Microsoft.Web/sites/', parameters('webAppName'))]"
+      ],
+      "tags": {
+        "[concat('hidden-link:', resourceGroup().id, '/providers/Microsoft.Web/sites/', parameters('webAppName'))]": "Resource",
+        "displayName": "AppInsights-towers"
+      },
+      "properties": {
+        "applicationId": "[parameters('webAppName')]"
+      }
+    },
+    {
+      "apiVersion": "2016-08-01",
+      "name": "[parameters('WebAppAPIName')]",
+      "type": "Microsoft.Web/sites",
+      "kind": "api",
+      "location": "[variables('RGLocation')]",
+      "properties": {
+        "name": "[parameters('WebAppAPIName')]",
+        "serverFarmId": "[resourceId('Microsoft.Web/serverFarms',variables('appServicePlanName'))]"
+      },
+      "dependsOn": [
+        "[concat('Microsoft.Web/serverFarms/',variables('appServicePlanName'))]"
+      ]
+    },
+    {
+      "apiVersion": "2014-04-01",
+      "name": "[variables('AppInsight2')]",
+      "type": "Microsoft.Insights/components",
+      "location": "[variables('RGLocation')]",
+      "dependsOn": [
+        "[resourceId('Microsoft.Web/sites/', parameters('WebAppAPIName'))]"
+      ],
+      "tags": {
+        "[concat('hidden-link:', resourceGroup().id, '/providers/Microsoft.Web/sites/', parameters('WebAppAPIName'))]": "Resource",
+        "displayName": "AppInsights-towers-API"
+      },
+      "properties": {
+        "applicationId": "[parameters('WebAppAPIName')]"
+      }
+    },
+    {
+      "name": "[variables('sql-serverName')]",
+      "type": "Microsoft.Sql/servers",
+      "location": "[resourceGroup().location]",
+      "apiVersion": "2014-04-01-preview",
+      "dependsOn": [ ],
+      "tags": {
+        "displayName": "sql-server"
+      },
+      "properties": {
+        "administratorLogin": "[parameters('sql-serverAdminLogin')]",
+        "administratorLoginPassword": "[parameters('sql-serverAdminLoginPassword')]"
+      },
+      "resources": [
+        {
+          "name": "AllowAllWindowsAzureIps",
+          "type": "firewallrules",
+          "location": "[resourceGroup().location]",
+          "apiVersion": "2014-04-01-preview",
+          "dependsOn": [
+            "[resourceId('Microsoft.Sql/servers', variables('sql-serverName'))]"
+          ],
+          "properties": {
+            "startIpAddress": "0.0.0.0",
+            "endIpAddress": "0.0.0.0"
+          }
+        },
+        {
+          "name": "[variables('sql-databaseName')]",
+          "type": "databases",
+          "location": "[resourceGroup().location]",
+          "apiVersion": "2014-04-01-preview",
+          "dependsOn": [
+            "[resourceId('Microsoft.Sql/servers', variables('sql-serverName'))]"
+          ],
+          "tags": {
+            "displayName": "towersDB"
+          },
+          "properties": {
+            "collation": "[parameters('Database1-Collation')]",
+            "edition": "[parameters('Database1-Edition')]",
+            "maxSizeBytes": "1073741824",
+            "requestedServiceObjectiveName": "[parameters('towersDB-Size')]"
+          }
+        }
+      ]
+    }
+  ]
+}
