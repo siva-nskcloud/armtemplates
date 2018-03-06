@@ -15,7 +15,7 @@
       "value": "Test@password"
     },
     "WebAppAPIName": {
-      "value": "towerapi-qas"
+      "value": "towerapi-qa"
     },
     "webAppName": {
       "value": "tower-qa"
